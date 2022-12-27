@@ -1,0 +1,30 @@
+﻿  Graphics_Project.cpp
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(70): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.14393.0\ucrt\stdio.h(207): note: see declaration of 'fopen'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(118): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(148): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(150): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(152): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(154): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(156): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(158): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(160): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(162): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(164): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(166): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(212): warning C4244: 'initializing': conversion from 'int' to 'float', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(213): warning C4244: 'initializing': conversion from 'int' to 'float', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(217): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(218): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(219): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(220): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(223): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(225): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(227): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(232): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(234): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(236): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(436): warning C4838: conversion from 'int' to 'BYTE' requires a narrowing conversion
+c:\users\user\documents\visual studio 2017\projects\graphics_project\graphics_project\graphics_project.cpp(646): warning C4244: 'return': conversion from 'WPARAM' to 'int', possible loss of data
+  Graphics_Project.vcxproj -> C:\Users\User\Documents\Visual Studio 2017\Projects\Graphics_Project\x64\Debug\Graphics_Project.exe
+  Graphics_Project.vcxproj -> C:\Users\User\Documents\Visual Studio 2017\Projects\Graphics_Project\x64\Debug\Graphics_Project.pdb (Partial PDB)
