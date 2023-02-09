@@ -6,6 +6,9 @@
 #include <opencv2/highgui.hpp>
 #include <iostream>
 #include <stdio.h>
+#include <vector>
+#include <stdlib.h>
+
 #pragma comment(lib, "opengl32.lib")                // Link OpenGL32.lib
 #pragma comment(lib, "glu32.lib")               // Link Glu32.lib
 #include <opencv2/opencv.hpp>
@@ -14,7 +17,6 @@ using namespace std;
 using namespace cv;
 
 #define     MAP_SIZE    1024                // Size Of Our .RAW Height Map ( NEW )
-#define     STEP_SIZE   1              // Width And Height Of Each Quad ( NEW )
 #define     HEIGHT_RATIO    1.5f                // Ratio That The Y Is Scaled According To The X And Z ( NEW )
 
 HDC     hDC = NULL;                   // Private GDI Device Context
@@ -27,12 +29,50 @@ bool        fullscreen = TRUE;                // Fullscreen Flag Set To TRUE By 
 bool        bRender = TRUE;                 // Polygon Flag Set To TRUE By Default ( NEW )
 
 Mat global_HMap;
-float scaleValue = 0.25f;                   // Scale Value For The Terrain ( NEW )
-float leftRightRotate = 0.25f;
+bool resolution = true;
+int verticaler = 0;
+int big_verticaler = 0;
+int triangle_horizontal = 0;
+int triangle_horizontal_big = 0;
+float scaleValue = 0.25f;
+float leftRightRotate = 0.0f;
 float upDownRotate = 0.25f;
 float lookRightLeft = 0.25f;
 float lookUpDown = 0.25f;
+int pickedIndex = -1;
+int mouseX;
+int mouseY;
+int Triangles = 0;
+int numOfBig_Tringles = 0;
+int Lines = 0;
+int numOfBig_Lines = 0;
+int Rain_Amount = 5000;
+bool isRainning = false;
+bool rained = false;
+bool isWindy = false;
+bool isRes = false;
+float fogScale = 0.0f;
+float wind_left_right = 0.0f;
+float gravity = -0.01;
+float rainMovement = 0.0f;
+float rainMovement_leftRight = 0.0f;
 
+float color_rain_r = 0.0;
+float color_rain_g = 0.0;
+float color_rain_b = 1.0;
+
+float color_fog_r = 0.5;
+float color_fog_g = 0.5;
+float color_fog_b = 0.8;
+
+bool isClicked = false;
+
+
+bool	bp;
+bool	fp;
+
+GLuint	screener;
+GLuint	txtr[3];
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);       // Declaration For WndProc
 
@@ -55,13 +95,14 @@ GLvoid ReSizeGLScene(GLsizei width, GLsizei height)		// Resize And Initialize Th
 	glLoadIdentity();									// Reset The Projection Matrix
 
 														// Calculate The Aspect Ratio Of The Window
-	gluPerspective(45.0f, (GLfloat)width / (GLfloat)height, 0.1f, 500.0f);
+	gluPerspective(45.0f, (GLfloat)width / (GLfloat)height, 0.1f, 100.0f);
 
 	glMatrixMode(GL_MODELVIEW);							// Select The Modelview Matrix
 	glLoadIdentity();									// Reset The Modelview Matrix
 }
 
 // Loads The .RAW File And Stores It In pHeightMap
+/*
 void LoadRawFile(LPSTR strName, int nSize, BYTE *pHeightMap)
 {
 	FILE *pFile = NULL;
@@ -92,184 +133,719 @@ void LoadRawFile(LPSTR strName, int nSize, BYTE *pHeightMap)
 	// Close The File
 	fclose(pFile);
 }
+*/
 
+struct edge_line {
+	Vec3f x;
+	Vec3f y;
+};
+
+struct Triangle 
+{
+	bool isPicked = false;
+	Vec3f x;
+	Vec3f y;
+	Vec3f z;
+
+	Vec3f X_color;
+	Vec3f Y_color;
+	Vec3f Z_color;
+
+	int neighbor_above;
+	int neighbor_under;
+	int neighbor_right;
+	int neighbor_left;
+};
+
+typedef struct {
+	float x, y, z;
+	float firstY;
+	float firstX1;
+	float firstX2;
+	float velocity;
+} Rain_Drop;
+
+
+vector<vector<Triangle>> all_triangles;
+vector<vector<edge_line>> all_lines;
+vector<Rain_Drop> rain;
+
+
+float Height(int X, int Y)          
+{
+	int x = X % global_HMap.rows;                   
+	int y = Y % global_HMap.cols;                   
+
+	if (! &global_HMap) return 0;  
+	int point = global_HMap.at<Vec3b>(Point(y, x)).val[0];
+	int calcHeight = 61 * point;
+	return  calcHeight / 255;       
+} 
+
+Vec3f setVertexColor(float x, float y)     
+{									 
+	float calc_point = ((Height(x,y))/ 30.0f) * 61.0f;
+	if (calc_point == 0)
+		return Vec3f(0, 0, 0);
+	else if (calc_point < 10)
+		return Vec3f(0, 0, 1);
+	else if (calc_point < 15.7)
+		return Vec3f(0, 0.5, 1);
+	else if (calc_point < 21.45)
+		return Vec3f(0, 1, 1);
+	else if (calc_point < 27.1)
+		return Vec3f(0, 1, 0.5);
+	else if (calc_point < 28.4)
+		return Vec3f(0, 1, 0);
+	else if (calc_point < 32.75)
+		return Vec3f(0.3, 1, 0);
+	else if (calc_point < 38.4)
+		return Vec3f(0.5, 0.5, 0);
+	else if (calc_point < 44.05)
+		return Vec3f(0.7, 0.3, 0);
+	else if (calc_point < 49.7)
+		return Vec3f(1, 0.3, 0);
+	else if (calc_point < 55.35)
+		return Vec3f(1, 0, 0);
+	else if (calc_point < 61)
+		return Vec3f(1, 0, 0);
+	return Vec3f(1, 1, 1);
+}
+
+void MakeRain()
+{
+	if (color_rain_r > 1) {
+		color_rain_r = 1.0;
+	}
+
+	if (color_rain_r < 0) {
+		color_rain_r = 0.0;
+	}
+
+	if (color_rain_g > 1) {
+		color_rain_g = 1.0;
+	}
+
+	if (color_rain_g < 0) {
+		color_rain_g = 0.0;
+	}
+
+	if (color_rain_b > 1) {
+		color_rain_b = 1.0;
+	}
+
+	if (color_rain_b < 0) {
+		color_rain_b = 0.0;
+	}
+
+	glColor3f(color_rain_r, color_rain_g, color_rain_b);
+
+	for (int i = 0; i < rain.size(); i++) {
+
+		if (gravity > 0) {
+			gravity = -0.01;
+		}
+		Rain_Drop p = rain[i];
+
+		glBegin(GL_LINES);
+		glVertex3f(p.x, p.y, p.z);
+		glVertex3f(p.x, p.y - 0.5, p.z);
+		glEnd();
+
+		rain[i].x += wind_left_right + rainMovement_leftRight;
+		rain[i].y += rain[i].velocity;
+		rain[i].z += rainMovement;
+		rain[i].velocity += gravity;
+
+		if (rain[i].y <= 0) {
+			rain[i].y = rain[i].firstY;
+			rain[i].velocity = 0.0f;
+		}
+
+		if (isWindy) {
+			if (rain[i].x > 200 && rainMovement_leftRight == 0) {
+				rain[i].x = rain[i].firstX1;
+			}
+			if (rain[i].x < 0 && rainMovement_leftRight == 0) {
+				rain[i].x = 200.0f;
+			}
+		}
+		
+		
+		
+	}
+}
+
+void MakeFog()
+{
+	if (color_fog_r > 1) {
+		color_fog_r = 1.0;
+	}
+
+	if (color_fog_r < 0) {
+		color_fog_r = 0.0;
+	}
+
+	if (color_fog_g > 1) {
+		color_fog_g = 1.0;
+	}
+
+	if (color_fog_g < 0) {
+		color_fog_g = 0.0;
+	}
+
+	if (color_fog_b > 1) {
+		color_fog_b = 1.0;
+	}
+
+	if (color_fog_b < 0) {
+		color_fog_b = 0.0;
+	}
+
+	float fogColor[4] = { color_fog_r, color_fog_g, color_fog_b, 0.2f };
+
+	glFogi(GL_FOG_MODE, GL_EXP2);
+	glFogfv(GL_FOG_COLOR, fogColor);
+	glFogf(GL_FOG_DENSITY, fogScale);
+	glHint(GL_FOG_HINT, GL_DONT_CARE);
+	glFogf(GL_FOG_START, 1.0f);
+	glFogf(GL_FOG_END, 25.0f);
+	glEnable(GL_FOG);
+	glFogi(GL_FOG_MODE, GL_EXP2);
+}
+
+void MakeRainDrops()
+{
+	int X = global_HMap.cols;
+	int Z = global_HMap.rows;
+	for (int i = 0; i < Rain_Amount; i++) {
+
+		Rain_Drop p;
+		p.x = float(rand() % X);
+		p.y = float(rand() % 40);
+		p.z = float(rand() % Z);
+
+		p.velocity = 0.0f;
+		p.firstY = float(rand() % 40);
+		p.firstX1 = 10.0f;
+		p.firstX2 = 900.0f;
+
+		rain.push_back(p);
+	}
+}
+
+void draweTriangles(int stepper) {
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	int rows = global_HMap.rows;
+	int cols = global_HMap.cols;
+
+	for (int X = 0; X < (rows - stepper); X += stepper) {
+		triangle_horizontal += 2;
+		for (int Y = 0; Y < (cols - stepper); Y += stepper) {
+
+			Triangle t1;
+			all_triangles[1].push_back(t1);
+			Triangle t2;
+			all_triangles[1].push_back(t2);
+			if (X == 0)
+				verticaler += 2;
+		}
+	}
+
+	int pos = 0;
+
+	for (int X = 0; X <(rows - stepper); X += stepper) {
+		for (int Y = 0; Y < (cols - stepper); Y += stepper) {
+
+			Triangles = Triangles + 2;
+			Lines = Lines + 6;
+
+			float H1 = Height(X, Y);
+			float H2 = Height(X, Y + stepper);
+			float H3 = Height(X + stepper, Y + stepper);
+			float H4 = Height(X + stepper, Y);
+
+			Vec3f C1 = setVertexColor(X, Y);
+			Vec3f C2 = setVertexColor(X, Y + stepper);
+			Vec3f C3 = setVertexColor(X + stepper, Y + stepper);
+			Vec3f C4 = setVertexColor(X + stepper, Y);
+
+			all_triangles[1][pos].x = Vec3f(float(X), H1, float(Y));
+			all_triangles[1][pos].y = Vec3f(float(X) + stepper, H4, float(Y));
+			all_triangles[1][pos].z = Vec3f(float(X), H2, float(Y) + stepper);
+
+			all_triangles[1][pos].X_color = C1;
+			all_triangles[1][pos].Z_color = C2;
+			all_triangles[1][pos].Y_color = C4;
+
+
+			if (Y != 0)
+			{
+				all_triangles[1][pos].neighbor_under = pos - 1;
+				all_triangles[1][pos - 1].neighbor_above = pos;
+			}
+			else
+				all_triangles[1][pos].neighbor_under = -1;
+
+
+
+			if (X != 0)
+			{
+				all_triangles[1][pos].neighbor_right = pos - verticaler + 1;
+				all_triangles[1][pos - verticaler + 1].neighbor_left = pos;
+			}
+			else
+				all_triangles[1][pos].neighbor_right = -1;
+
+
+			edge_line l1;
+			l1.x = Vec3f(float(X), H1, float(Y));
+			l1.y = Vec3f(float(X) + stepper, H4, float(Y));
+			all_lines[1].push_back(l1);
+
+			edge_line l2;
+			l2.x = Vec3f(float(X) + stepper, H4, float(Y));
+			l2.y = Vec3f(float(X), H2, float(Y) + stepper);
+			all_lines[1].push_back(l2);
+
+			edge_line l3; 
+			l3.x = Vec3f(float(X) + stepper, H4, float(Y));
+			l3.y = Vec3f(float(X), H2, float(Y) + stepper);
+			all_lines[1].push_back(l3);
+
+			pos++;
+
+			all_triangles[1][pos].x = Vec3f(float(X), H2, float(Y) + stepper);
+			all_triangles[1][pos].y = Vec3f(float(X) + stepper, H4, float(Y));
+			all_triangles[1][pos].z = Vec3f(float(X) + stepper, H3, float(Y) + stepper);
+
+			all_triangles[1][pos].X_color = C2;
+			all_triangles[1][pos].Z_color = C3;
+			all_triangles[1][pos].Y_color = C4;
+
+			all_triangles[1][pos].neighbor_right = pos - 1;
+			all_triangles[1][pos - 1].neighbor_left = pos;
+
+			all_lines[1].push_back(l3);
+
+			pos++;
+
+			edge_line l4;
+			l4.x = Vec3f(float(X) + stepper, H4, float(Y));
+			l4.y = Vec3f(float(X) + stepper, H3, float(Y) + stepper);
+			all_lines[1].push_back(l4);
+
+			edge_line l5;
+			l5.x = Vec3f(float(X) + stepper, H3, float(Y) + stepper);
+			l5.y = Vec3f(float(X), H2, float(Y) + stepper);
+			all_lines[1].push_back(l5);
+		}
+	}
+}
+
+void init_big_Triangles() {
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	int rows = global_HMap.rows;
+	int cols = global_HMap.cols;
+
+	int big_step_size = 8;
+	for (int X = 0; X < (rows - big_step_size); X += big_step_size) {
+		triangle_horizontal_big += 2;
+		for (int Y = 0; Y < (cols - big_step_size); Y += big_step_size) {
+			Triangle t1;
+			all_triangles[0].push_back(t1);
+			Triangle t2;
+			all_triangles[0].push_back(t2);
+			if (X == 0)
+				big_verticaler += 2;
+		}
+	}
+
+	int pos = 0;
+	for (int X = 0; X < (rows - big_step_size); X += big_step_size) {
+		for (int Y = 0; Y < (cols - big_step_size); Y += big_step_size) {
+			numOfBig_Tringles += 2;
+			numOfBig_Lines += 6;
+			
+			float H1 = Height(X, Y);
+			float H2 = Height(X, Y + big_step_size);
+			float H3 = Height(X + big_step_size, Y + big_step_size);
+			float H4 = Height(X + big_step_size, Y);
+
+			Vec3f C1 = setVertexColor(X, Y);
+			Vec3f C2 = setVertexColor(X, Y + big_step_size);
+			Vec3f C3 = setVertexColor(X + big_step_size, Y + big_step_size);
+			Vec3f C4 = setVertexColor(X + big_step_size, Y);
+
+			all_triangles[0][pos].x = Vec3f(float(X), H1, float(Y));
+			all_triangles[0][pos].y = Vec3f(float(X) + big_step_size, H4, float(Y));
+			all_triangles[0][pos].z = Vec3f(float(X), H2, float(Y) + big_step_size);
+
+			all_triangles[0][pos].X_color = C1;
+			all_triangles[0][pos].Z_color = C2;
+			all_triangles[0][pos].Y_color = C4;
+
+			if (Y != 0)
+			{
+				all_triangles[0][pos].neighbor_under = pos - 1;
+				all_triangles[0][pos - 1].neighbor_above = pos;
+			}
+			else
+				all_triangles[0][pos].neighbor_under = -1;
+
+
+
+			if (X != 0)
+			{
+				all_triangles[0][pos].neighbor_right = pos - big_verticaler + 1;
+				all_triangles[0][pos - big_verticaler + 1].neighbor_left = pos;
+			}
+			else
+				all_triangles[0][pos].neighbor_right = -1;
+
+			edge_line l1;
+			l1.x = Vec3f(float(X), H1, float(Y));
+			l1.y = Vec3f(float(X) + big_step_size, H4, float(Y));
+			all_lines[0].push_back(l1);
+
+			edge_line l2;
+			l2.x = Vec3f(float(X) + big_step_size, H4, float(Y));
+			l2.y = Vec3f(float(X), H2, float(Y) + big_step_size);
+			all_lines[0].push_back(l2);
+
+			edge_line l3;
+			l3.x = Vec3f(float(X) + big_step_size, H4, float(Y));
+			l3.y = Vec3f(float(X), H2, float(Y) + big_step_size);
+			all_lines[0].push_back(l3);
+
+			pos++;
+
+			all_triangles[0][pos].x = Vec3f(float(X), H2, float(Y) + big_step_size);
+			all_triangles[0][pos].y = Vec3f(float(X) + big_step_size, H4, float(Y));
+			all_triangles[0][pos].z = Vec3f(float(X) + big_step_size, H3, float(Y) + big_step_size);
+
+			all_triangles[0][pos].X_color = C2;
+			all_triangles[0][pos].Z_color = C3;
+			all_triangles[0][pos].Y_color = C4;
+
+			all_triangles[0][pos].neighbor_right = pos - 1;
+			all_triangles[0][pos - 1].neighbor_left = pos;
+
+			all_lines[0].push_back(l3);
+
+			pos++;
+
+			edge_line l4;
+			l4.x = Vec3f(float(X) + big_step_size, H4, float(Y));
+			l4.y = Vec3f(float(X) + big_step_size, H3, float(Y) + big_step_size);
+			all_lines[0].push_back(l4);
+
+			edge_line l5;
+			l5.x = Vec3f(float(X) + big_step_size, H3, float(Y) + big_step_size);
+			l5.y = Vec3f(float(X), H2, float(Y) + big_step_size);
+			all_lines[0].push_back(l5);
+		}
+	}
+}
 int InitGL(GLvoid)										// All Setup For OpenGL Goes Here
 {
+	glEnable(GL_TEXTURE_2D);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 	glShadeModel(GL_SMOOTH);                // Enable Smooth Shading
 	glClearColor(0.0f, 0.0f, 0.0f, 0.5f);           // Black Background
 	glClearDepth(1.0f);                 // Depth Buffer Setup
 	glEnable(GL_DEPTH_TEST);                // Enables Depth Testing
 	glDepthFunc(GL_LEQUAL);                 // The Type Of Depth Testing To Do
 	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);  // Really Nice Perspective Calculations
+											// g_HeightMap array.  We also pass in the size of the .raw file (1024).
 
-	// Here we read read in the height map from the .raw file and put it in our
-	// g_HeightMap array.  We also pass in the size of the .raw file (1024).
-
-	global_HMap = imread("C:\\Users\\User\\Desktop\\image.jfif", IMREAD_COLOR);
-	return TRUE;                        // Initialization Went OK
-}
-
-float Height(int X, int Y)          // This Returns The Height From A Height Map Index
-{
-	int x = X % global_HMap.rows;                   // Error Check Our x Value
-	int y = Y % global_HMap.cols;                   // Error Check Our y Value
-
-	if (! &global_HMap) return 0;               // Make Sure Our Data Is Valid
-	return 61 *global_HMap.at<Vec3b>(Point(y, x)).val[0] / 256;       // Index Into Our Height Array And Return The Height
-} 
-
-void setVerteces() {
-	glColor3f(1.0, 0.0, 0.0);
-	glBegin(GL_LINES);
-	glVertex3f(0.0,0.0,0.0);
-	glVertex3f(700.0,0.0,0.0);
-	glEnd();
-
-	glColor3f(0.0, 1.0, 0.0);
-	glBegin(GL_LINES);
-	glVertex3f(0.0, 0.0, 0.0);
-	glVertex3f(0.0, 150.0, 0.0);
-	glEnd();
-
-	glColor3f(1.0, 0.0, 1.0);
-	glBegin(GL_LINES);
-	glVertex3f(0.0, 0.0, 0.0);
-	glVertex3f(700.0, 0.0, 700.0);
-	glEnd();
-}
-
-void setVertexColor(int x, int y)     // This Sets The Color Value For A Particular Index
-{                               // Depending On The Height Index
-	if (!&global_HMap) return;                 // Make Sure Our Height Data Is Valid
-
-	float fColor = Height(x,y);
-
-	if(fColor == 0)
-		glColor3f(0.4, 0.4, 0.4);
-	else if (fColor < 15.8)
-		glColor4f(0, 0, 255, 0.8);
-	else if (fColor < 21.45)
-		glColor4f(0, 128, 255, 0.8);
-	else if (fColor < 27.1)
-		glColor4f(0, 255, 128, 0.8);
-	else if (fColor < 28.4)
-		glColor4f(0, 255, 255, 0.8);
-	else if (fColor < 32.75)
-		glColor4f(0, 255, 0, 0.8);
-	else if (fColor < 44.05)
-		glColor4f(255, 255, 0, 0.8);
-	else if (fColor < 49.7)
-		glColor4f(255, 128, 0, 0.8);
-	else if (fColor < 55.35)
-		glColor4f(255, 0, 0, 0.8);
-	else if (fColor < 61)
-		glColor4f(255, 0, 0, 0.8);
-	else
-		glColor3f(255, 255, 255);
+	global_HMap = imread("C:\\Users\\User\\Desktop\\image4.png", IMREAD_COLOR);
 
 	/*
-	if (fColor < 15.8)
-	glColor3f(0.4, 0.4, 0.4);
-	else if (fColor < 21.45)
-	glColor4f(0, 0, 255, 0.8);
-	else if (fColor < 27.1)
-	glColor4f(0, 128, 255, 0.8);
-	else if (fColor < 28.4)
-	glColor4f(0, 255, 128, 0.8);
-	else if (fColor < 32.75)
-	glColor4f(0, 255, 255, 0.8);
-	else if (fColor < 44.05)
-	glColor4f(0, 255, 0, 0.8);
-	else if (fColor < 49.7)
-	glColor4f(255, 255, 0, 0.8);
-	else if (fColor < 55.35)
-	glColor4f(255, 128, 0, 0.8);
-	else if (fColor < 61)
-	glColor4f(255, 0, 0, 0.8);
-	else
-	glColor3f(255, 255, 255);
+	AllocConsole();
+	freopen("CONIN$", "r", stdin);
+	freopen("CONOUT$", "w", stdout);
+	freopen("CONOUT$", "w", stderr);
 	*/
+	vector<Triangle> v1;
+	vector<Triangle> v2;
+	vector<edge_line> v3;
+	vector<edge_line> v4;
+
+	all_triangles.push_back(v1);
+	all_triangles.push_back(v2);
+	all_lines.push_back(v3);
+	all_lines.push_back(v4);
+
+	
+	draweTriangles(4);
+	init_big_Triangles();
+
+	//printf("%d \n", all_triangles[0].size());
+	//printf("%d \n", all_triangles[1].size());
+
+	MakeRainDrops();
+
+	return TRUE;                        // Initialization Went OK
 }
 
 int DrawGLScene(GLvoid)									// Here's Where We Do All The Drawing
 {
+	if (!keys['Z']) {
+		MakeFog();
+
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glLoadIdentity();
+		gluLookAt(10 + lookRightLeft, 20 + lookUpDown, -35 + scaleValue, 20 + lookRightLeft, 10 + lookUpDown, 20.0 + scaleValue, 0, 1, 0);
+		glScalef(0.25, 0.25*HEIGHT_RATIO, 0.25);
+		glTranslatef(256, 0.0, 256);
+		glRotatef(leftRightRotate, 0, 10, 0);
+		glRotatef(upDownRotate, 0, 0, 10);
+		glTranslatef(-256, 0.0, -256);
+
+		glBindTexture(GL_TEXTURE_2D, txtr[screener]);
+
+
+		int rows = global_HMap.rows;
+		int cols = global_HMap.cols;
+
+		if (isClicked) {
+			glDrawBuffer(GL_BACK);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			for (int index = 0; index < Triangles; index++) {
+				Triangle trng = all_triangles[1][index];
+
+				Vec3f vertex_x = trng.x;
+				Vec3f vertex_y = trng.y;
+				Vec3f vertex_z = trng.z;
+
+				float r = float((index & 0x000000FF) >> 0);
+				float g = float((index & 0x0000FF00) >> 8);
+				float b = float((index & 0x00FF0000) >> 16);
+
+				r = r / 255.0f;
+				g = g / 255.0f;
+				b = b / 255.0f;
+
+				glDisable(GL_FOG);
+				glBegin(GL_TRIANGLES);
+
+				glColor3f(r, g, b);
+				glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+				glColor3f(r, g, b);
+				glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+				glColor3f(r, g, b);
+				glVertex3f(vertex_z[0], vertex_z[1], vertex_z[2]);
+
+				glEnd();
+			}
+		}
+		else {
+
+			glDrawBuffer(GL_FRONT);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			for (int index = 0; index < Triangles; index++) {
+
+				Triangle trng = all_triangles[1][index];
+				Vec3f vertex_x = trng.x;
+				Vec3f vertex_y = trng.y;
+				Vec3f vertex_z = trng.z;
+				Vec3f colorx = trng.X_color;
+				Vec3f colory = trng.Y_color;
+				Vec3f colorz = trng.Z_color;
+
+				glBegin(GL_TRIANGLES);
+
+				if (trng.isPicked) {
+
+					glColor3f(1.0f, 1.0f, 1.0f);
+					glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+					glColor3f(1.0f, 1.0f, 1.0f);
+					glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+					glColor3f(1.0f, 1.0f, 1.0f);
+					glVertex3f(vertex_z[0], vertex_z[1], vertex_z[2]);
+				}
+				else {
+					glColor3f(colorx[0], colorx[1], colorx[2]);
+					glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+					glColor3f(colory[0], colory[1], colory[2]);
+					glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+					glColor3f(colorz[0], colorz[1], colorz[2]);
+					glVertex3f(vertex_z[0], vertex_z[1], vertex_z[2]);
+				}
+
+				glEnd();
+			}
+
+		}
+		for (int i = 0; i < Lines; i++) {
+			edge_line trng = all_lines[1][i];
+
+			Vec3f vertex_x = trng.x;
+			Vec3f vertex_y = trng.y;
+
+			glBegin(GL_LINES);
+
+			glColor3f(0.0f, 0.0f, 0.0f);
+			glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+			glColor3f(0.0f, 0.0f, 0.0f);
+			glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+			glEnd();
+		}
+
+		if (isRes) {
+			for (int i = 0; i < numOfBig_Lines; i++) {
+				edge_line trng = all_lines[0][i];
+
+				Vec3f vertex_x = trng.x;
+				Vec3f vertex_y = trng.y;
+
+				glBegin(GL_LINES);
+
+				glColor3f(1.0f, 1.0f, 1.0f);
+				glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+				glColor3f(1.0f, 1.0f, 1.0f);
+				glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+				glEnd();
+			}
+		}
+
+		if (isRainning)
+			MakeRain();
+
+		glEnable(GL_FOG);
+
+		return TRUE;
+	}
+else {
+	MakeFog();
+
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glLoadIdentity();
-	gluLookAt(212 +lookRightLeft, 60+lookUpDown, 194,186 + lookRightLeft, 55 + lookUpDown, 171,0, 1, 0);
-	glScalef(scaleValue, scaleValue*HEIGHT_RATIO, scaleValue);
-	glTranslatef(256,0.0,256);
-	setVerteces();
-	glRotatef(leftRightRotate *10, 0 ,10, 0);
-	glRotatef(upDownRotate * 10, 0, 0, 10);
+	gluLookAt(10 + lookRightLeft, 20 + lookUpDown, -35 + scaleValue, 20 + lookRightLeft, 10 + lookUpDown, 20.0 + scaleValue, 0, 1, 0);
+	glScalef(0.25, 0.25*HEIGHT_RATIO, 0.25);
+	glTranslatef(256, 0.0, 256);
+	glRotatef(leftRightRotate, 0, 10, 0);
+	glRotatef(upDownRotate, 0, 0, 10);
 	glTranslatef(-256, 0.0, -256);
 
-	//gluLookAt(20.0 +rotateRight+rotateAngle, 10.0+rotateUp, -40.0 +scaleValue, 10 + rotateRight, 0.0+rotateUp, 20.0 + scaleValue, 0, 1, 0);
-	//glTranslatef(global_HMap.rows/256, global_HMap.cols/256, 0);
-	//glScalef(scaleValue, scaleValue*HEIGHT_RATIO, scaleValue);
-	//glRotatef(rotateRight, 0, 0, 0);
-	//glRotatef(rotateUp, 0, 0, 0);
+	glBindTexture(GL_TEXTURE_2D, txtr[screener]);
 
-	float cols = global_HMap.cols;
-	float rows = global_HMap.rows;
 
-	for (float x = 0; x < (rows - STEP_SIZE); x += STEP_SIZE) {
-		for (float y = 0; y < (cols - STEP_SIZE); y += STEP_SIZE) {
-			float h1 = Height(x, y);
-			float h2 = Height(x, y + STEP_SIZE);
-			float h3 = Height(x + STEP_SIZE, y + STEP_SIZE);
-			float h4 = Height(x + STEP_SIZE, y);
+	int rows = global_HMap.rows;
+	int cols = global_HMap.cols;
 
+	if (isClicked) {
+		glDrawBuffer(GL_BACK);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		for (int index = 0; index < numOfBig_Tringles; index++) {
+			Triangle trng = all_triangles[0][index];
+
+			Vec3f vertex_x = trng.x;
+			Vec3f vertex_y = trng.y;
+			Vec3f vertex_z = trng.z;
+
+			float r = float((index & 0x000000FF) >> 0);
+			float g = float((index & 0x0000FF00) >> 8);
+			float b = float((index & 0x00FF0000) >> 16);
+
+			r = r / 255.0f;
+			g = g / 255.0f;
+			b = b / 255.0f;
+
+			glDisable(GL_FOG);
 			glBegin(GL_TRIANGLES);
-			setVertexColor(float(x), float(y));
-			glVertex3f(float(x), h1, float(y));
-			setVertexColor(float(x) + STEP_SIZE, float(y));
-			glVertex3f(float(x) + STEP_SIZE, h4, float(y));
-			setVertexColor(float(x), float(y) + STEP_SIZE);
-			glVertex3f(float(x), h2, float(y)+STEP_SIZE);
-			glEnd();
 
-			glBegin(GL_TRIANGLES);
-			setVertexColor(float(x), float(y) + STEP_SIZE);
-			glVertex3f(float(x), h2, float(y) + STEP_SIZE);
-			setVertexColor(float(x) + STEP_SIZE, float(y));
-			glVertex3f(float(x) + STEP_SIZE, h4, float(y));
-			setVertexColor(float(x) + STEP_SIZE, float(y) + STEP_SIZE);
-			glVertex3f(float(x) + STEP_SIZE, h3, float(y) + STEP_SIZE);
-			glEnd();
+			glColor3f(r, g, b);
+			glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
 
-			glColor3f(0, 0, 0);
-			glBegin(GL_LINES);
-			glVertex3f(float(x), h1, float(y));
-			glVertex3f(float(x) + STEP_SIZE, h4, float(y));
-			glEnd();
-			
-			glBegin(GL_LINES);
-			glVertex3f(float(x), h2, float(y) + STEP_SIZE);
-			glVertex3f(float(x) + STEP_SIZE, h4, float(y));
-			glEnd();
+			glColor3f(r, g, b);
+			glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
 
-			glBegin(GL_LINES);
-			glVertex3f(float(x), h2, float(y) + STEP_SIZE);
-			glVertex3f(float(x), h1, float(y));
-			glEnd();
-			//
-			glBegin(GL_LINES);
-			glVertex3f(float(x), h2, float(y) + STEP_SIZE);
-			glVertex3f(float(x) + STEP_SIZE, h4, float(y));
-			glEnd();
+			glColor3f(r, g, b);
+			glVertex3f(vertex_z[0], vertex_z[1], vertex_z[2]);
 
-			glBegin(GL_LINES);
-			glVertex3f(float(x) + STEP_SIZE, h4, float(y));
-			glVertex3f(float(x) + STEP_SIZE, h3, float(y) + STEP_SIZE);
-			glEnd();
-
-			glBegin(GL_LINES);
-			glVertex3f(float(x), h2, float(y) + STEP_SIZE);
-			glVertex3f(float(x) + STEP_SIZE, h3, float(y) + STEP_SIZE);
 			glEnd();
 		}
 	}
+	else {
+
+		glDrawBuffer(GL_FRONT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		for (int index = 0; index < numOfBig_Tringles; index++) {
+
+			Triangle trng = all_triangles[0][index];
+			Vec3f vertex_x = trng.x;
+			Vec3f vertex_y = trng.y;
+			Vec3f vertex_z = trng.z;
+			Vec3f colorx = trng.X_color;
+			Vec3f colory = trng.Y_color;
+			Vec3f colorz = trng.Z_color;
+
+			glBegin(GL_TRIANGLES);
+
+			if (trng.isPicked) {
+
+				glColor3f(1.0f, 1.0f, 1.0f);
+				glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+				glColor3f(1.0f, 1.0f, 1.0f);
+				glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+				glColor3f(1.0f, 1.0f, 1.0f);
+				glVertex3f(vertex_z[0], vertex_z[1], vertex_z[2]);
+			}
+			else {
+				glColor3f(colorx[0], colorx[1], colorx[2]);
+				glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+				glColor3f(colory[0], colory[1], colory[2]);
+				glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+				glColor3f(colorz[0], colorz[1], colorz[2]);
+				glVertex3f(vertex_z[0], vertex_z[1], vertex_z[2]);
+			}
+
+			glEnd();
+		}
+
+	}
+	for (int i = 0; i < numOfBig_Lines; i++) {
+		edge_line trng = all_lines[0][i];
+
+		Vec3f vertex_x = trng.x;
+		Vec3f vertex_y = trng.y;
+
+		glBegin(GL_LINES);
+
+		glColor3f(0.0f, 0.0f, 0.0f);
+		glVertex3f(vertex_x[0], vertex_x[1], vertex_x[2]);
+
+		glColor3f(0.0f, 0.0f, 0.0f);
+		glVertex3f(vertex_y[0], vertex_y[1], vertex_y[2]);
+
+		glEnd();
+	}
+
+	if (isRainning)
+		MakeRain();
+
+	glEnable(GL_FOG);
+
 	return TRUE;
+}
 }
 
 GLvoid KillGLWindow(GLvoid)								// Properly Kill The Window
@@ -525,8 +1101,56 @@ LRESULT CALLBACK WndProc(HWND    hWnd,           // Handle For This Window
 
 	case WM_LBUTTONDOWN:                // Did We Receive A Left Mouse Click?
 	{
-		bRender = !bRender;         // Change Rendering State Between Fill/Wire Frame
+		glDisable(GL_FOG);
+		if (isRainning) {
+			rained = true;
+		}
+		isRainning = false;
+		POINT position;
+		GetCursorPos(&position);
+		ScreenToClient(hWnd, &position);
+
+		//printf("%d %d \n", position.x, position.y);
+		mouseX = position.x;
+		int viewport[4];
+		glGetIntegerv(GL_VIEWPORT, viewport);
+		mouseY = viewport[3] - position.y;
+		
 		return 0;               // Jump Back
+	}
+
+	case WM_LBUTTONUP:
+	{
+		unsigned char info[3];
+		isClicked = true;
+
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		glReadBuffer(GL_BACK);
+
+		DrawGLScene();
+		glReadPixels(mouseX, mouseY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, info);
+		isClicked = false;
+		
+		
+		int id = info[0] + (info[1] * 256) + (info[2] * 256 * 256);
+
+		printf("%d %d \n", id, 0);
+		if (id != 0) {
+			if (keys['Z']) {
+				all_triangles[0][id].isPicked = !all_triangles[0][id].isPicked;
+
+			}
+			else {
+				all_triangles[1][id].isPicked = !all_triangles[1][id].isPicked;
+			}
+		}
+		if (rained) {
+			isRainning = true;
+			rained = false;
+		}
+
+		glEnable(GL_FOG);
+		return 0;
 	}
 
 	case WM_KEYDOWN:                // Is A Key Being Held Down?
@@ -552,106 +1176,220 @@ LRESULT CALLBACK WndProc(HWND    hWnd,           // Handle For This Window
 	return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
-int WINAPI WinMain(HINSTANCE   hInstance,      // Instance
-	HINSTANCE   hPrevInstance,      // Previous Instance
-	LPSTR       lpCmdLine,      // Command Line Parameters
-	int     nCmdShow)       // Window Show State
+int WINAPI WinMain(HINSTANCE   hInstance,
+	HINSTANCE   hPrevInstance,
+	LPSTR       lpCmdLine,
+	int     nCmdShow)
+
 {
-	MSG     msg;                    // Windows Message Structure
-	BOOL    done = FALSE;                 // Bool Variable To Exit Loop
+	MSG     msg;
+	BOOL    done = FALSE;
+	fullscreen = FALSE;
 
-										  // Ask The User Which Screen Mode They Prefer
-	//if (MessageBox(NULL, "Would You Like To Run In Fullscreen Mode?", "Start FullScreen?", MB_YESNO | MB_ICONQUESTION) == IDNO)
-	//{
-	fullscreen = FALSE;               // Windowed Mode
-	//}
-
-	// Create Our OpenGL Window
-	if (!CreateGLWindow("Roy's Triangles", 640, 480, 16, fullscreen))
+	if (!CreateGLWindow((char*)"NeHe & Ben Humphrey's Height Map Tutorial", 640, 480, 16, fullscreen))
 	{
-		return 0;                   // Quit If Window Was Not Created
+		return 0;
 	}
 
-	while (!done)                        // Loop That Runs While done=FALSE
+	while (!done)
 	{
-		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))   // Is There A Message Waiting?
+		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
-			if (msg.message == WM_QUIT)       // Have We Received A Quit Message?
+			if (msg.message == WM_QUIT)
 			{
-				done = TRUE;          // If So done=TRUE
+				done = TRUE;
 			}
-			else                    // If Not, Deal With Window Messages
+			else
 			{
-				TranslateMessage(&msg);     // Translate The Message
-				DispatchMessage(&msg);      // Dispatch The Message
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
 			}
 		}
-		else                        // If There Are No Messages
+		else
+
+
 		{
-			// Draw The Scene.  Watch For ESC Key And Quit Messages From DrawGLScene()
-			if ((active && !DrawGLScene()) || keys[VK_ESCAPE])  // Active?  Was There A Quit Received?
+
+			if ((active && !DrawGLScene()) || keys[VK_ESCAPE])
 			{
-				done = TRUE;          // ESC or DrawGLScene Signalled A Quit
+				done = TRUE;
 			}
-			else if (active)            // Not Time To Quit, Update Screen
+			else if (active)
 			{
-				SwapBuffers(hDC);       // Swap Buffers (Double Buffering)
+				SwapBuffers(hDC);
 			}
 
-			if (keys[VK_F1])            // Is F1 Being Pressed?
+			if (keys[VK_F1])
 			{
-				keys[VK_F1] = FALSE;      // If So Make Key FALSE
-				KillGLWindow();         // Kill Our Current Window
-				fullscreen = !fullscreen;     // Toggle Fullscreen / Windowed Mode
-											  // Recreate Our OpenGL Window
-				if (!CreateGLWindow("NeHe & Ben Humphrey's Height Map Tutorial", 640, 480, 16, fullscreen))
+				keys[VK_F1] = FALSE;
+				KillGLWindow();
+				fullscreen = !fullscreen;
+
+				if (!CreateGLWindow((char*)"NeHe & Ben Humphrey's Height Map Tutorial", 640, 480, 16, fullscreen))
 				{
-					return 0;       // Quit If Window Was Not Created
+					return 0;
 				}
 			}
-			if (keys['E'])
-				scaleValue += 0.01f;
 
-			if (keys['Q'])
-				scaleValue -= 0.01f;
+			if (keys[VK_CONTROL] && keys['R'] && isRainning && keys['W']) { // move rain inwards
+				rainMovement += 0.5f;
+			}
 
-			if (keys[VK_RIGHT])
-				leftRightRotate += 0.1f;
+			if (!(keys[VK_CONTROL] && keys['R'] && isRainning && keys['W']) && !(keys[VK_CONTROL] && keys['R'] && isRainning && keys['W'])) { // stop rain movement forward/backwards
+				rainMovement = 0.0f;
+			}
 
-			if (keys[VK_LEFT])
-				leftRightRotate -= 0.1f;
+			if (!(keys[VK_CONTROL] && keys['R'] && isRainning && keys['A']) && !(keys[VK_CONTROL] && keys['R'] && isRainning && keys['D'])) { // stop rain movement left/right
+				rainMovement_leftRight = 0.0f;
+			}
 
-			if (keys[VK_UP])
-				upDownRotate += 0.1f;
+			if (keys[VK_CONTROL] && keys['R'] && isRainning && keys['S']) { // move rain forward
+				rainMovement -= 1.5f;
+			}
 
-			if (keys[VK_DOWN])
-				upDownRotate -= 0.1f;
+			if (keys[VK_CONTROL] && keys['R'] && isRainning && keys['D'] && !isWindy) { // move rain to the right
+				rainMovement_leftRight += 0.5f;
+			}
 
-			if (keys['W'])
-				lookUpDown += 3;
+			if (keys[VK_CONTROL] && keys['R'] && isRainning && keys['A'] && !isWindy) { // move rain to the left
+				rainMovement_leftRight -= 0.5f;
+			}
 
-			if (keys['S'])
-				lookUpDown -= 3;
+			if (keys[VK_CONTROL] && keys['R']&& isRainning && keys[VK_UP]) { // more redness to the raindrop
+				color_rain_r += 0.01;
+			}
 
-			if (keys['D'])
-				lookRightLeft += 3;
-			
-			if (keys['A'])
-				lookRightLeft -= 3;
+			if (keys[VK_CONTROL] && keys['R'] && isRainning && keys[VK_DOWN]) { // less redness to the raindrop
+				color_rain_r -= 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['G'] && isRainning && keys[VK_UP]) { // more greennes to the raindrop
+				color_rain_g += 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['G'] && isRainning && keys[VK_DOWN]) { // less greenness to the raindrop
+				color_rain_g -= 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['B'] && isRainning && keys[VK_UP]) { // more blueness to the raindrop
+				color_rain_b += 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['B'] && isRainning && keys[VK_DOWN]) { // less blueness to the raindrop
+				color_rain_b -= 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['R'] && keys[VK_SHIFT] && keys[VK_UP]) { // more redness to the fog
+				color_fog_r += 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['R'] && keys[VK_SHIFT] && keys[VK_DOWN]) { // less redness to the fog
+				color_fog_r -= 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['G'] && keys[VK_SHIFT] && keys[VK_UP]) { // more greennes to the fog
+				color_fog_g += 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['G'] && keys[VK_SHIFT] && keys[VK_DOWN]) { // less greenness to the fog
+				color_fog_g -= 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['B'] && keys[VK_SHIFT] && keys[VK_UP]) { // more blueness to the fog
+				color_fog_b += 0.01;
+			}
+
+			if (keys[VK_CONTROL] && keys['B'] && keys[VK_SHIFT] && keys[VK_DOWN]) { // less blueness to the fog
+				color_fog_b -= 0.01;
+			}
+
+			if (keys['U'] && isRainning) { // slows down the rain  speed
+				gravity += 0.005f;
+			}
+
+			if (keys['I'] && isRainning) { //  fasten the rain speed
+				gravity -= 0.001f;
+			}
+
+			if (keys['J'] && isRainning ) { //  stop the wind
+				wind_left_right = 0.0f;
+				isWindy = false;
+			}
+
+			if (keys['L'] && isRainning && !keys[VK_CONTROL] ) { //  wind to the left
+				isWindy = true;
+				wind_left_right += 0.1f;
+			}
+
+			if (keys['K'] && isRainning && !keys[VK_CONTROL] ) { //  wind to the right
+				isWindy = true;
+				wind_left_right -= 0.1f;
+			}
+
+
+			if (keys['R'] && !keys[VK_CONTROL]) { //  rain
+				isRainning = !isRainning;
+			}
+
+			if (keys['F'] && !keys[VK_CONTROL]) { //add fog
+				fogScale += 0.001f;
+			}
+
+			if (keys['G'] && !keys[VK_CONTROL]) { // remove fog
+				fogScale -= 0.001f;
+			}
+
+			if (keys[VK_RIGHT]) { //look right
+				leftRightRotate += 0.5f;
+			}
+			if (keys[VK_LEFT]) { // look left
+				leftRightRotate -= 0.5f;
+			}
+			if (keys[VK_UP] && !keys[VK_CONTROL]) { //look up
+				upDownRotate += 0.8f;
+			}
+			if (keys[VK_DOWN] && !keys[VK_CONTROL]) { // look down
+				upDownRotate -= 0.8f;
+			}
+
+			if (keys['D'] && !keys[VK_CONTROL]) { //move right
+				lookRightLeft -= 1.5;
+			}
+			if (keys['A'] && !keys[VK_CONTROL]) { // move left
+				lookRightLeft += 1.5;
+			}
+			if (keys['W'] && !keys[VK_CONTROL]) { // move up
+				lookUpDown += 1.5;
+			}
+			if (keys['S'] && !keys[VK_CONTROL]) { // move down
+				lookUpDown -= 1.5;
+			}
+
+			if (keys['Q']) { //move farward
+				scaleValue -= 1.0f;
+			}
+			if (keys['E']) { // move backword
+				scaleValue += 1.0f;
+			}
+
+			if (keys['P']) { //resolution line
+				isRes = !isRes;
+			}
+
+			if (keys[VK_F1])
+			{
+				keys[VK_F1] = FALSE;
+				KillGLWindow();
+				fullscreen = !fullscreen;
+
+				if (!CreateGLWindow((char*)"the best map", 640, 480, 16, fullscreen))
+				{
+					return 0;
+				}
+			}
 		}
 	}
 
-	// Shutdown
-	KillGLWindow();                     // Kill The Window
-	return (msg.wParam);                    // Exit The Program
+	KillGLWindow();
+	return (msg.wParam);
 }
-
-	/*
-	Mat img_color = imread("C:\\Users\\User\\Desktop\\chewbacca.png", 1);
-	namedWindow("color image", WINDOW_AUTOSIZE);
-	imshow("color image", img_color);
-	imwrite("C:\\Users\\User\\Desktop\\chewbaccaa.png", img_color);
-	waitKey(0);
-	destroyAllWindows();
-	return 0;
-	*/
